@@ -1,11 +1,6 @@
-import math
-from math import sqrt
-
 import dash_table
 import pandas as pd
 import plotly.express as px  # (version 4.7.0)
-import plotly.figure_factory
-import plotly.graph_objects as go
 
 import dash  # (version 1.12.0) pip install dash
 import dash_core_components as dcc
@@ -13,6 +8,8 @@ import dash_html_components as html
 from dash.dependencies import Input, Output
 from scipy import spatial
 from sklearn import preprocessing
+from RadViz.main import RadViz2D
+from sklearn.decomposition import PCA
 
 app = dash.Dash('Data Visualization')
 
@@ -57,19 +54,6 @@ def GetTable(df, id):
         style_header=dict(backgroundColor="paleturquoise"),
         style_data=dict(backgroundColor="lavender", whiteSpace='normal', height='auto'),
     )
-    # return plotly.figure_factory.create_table(data=[go.Table(df)])
-
-
-# def GetScatterPlot(df, label):
-#     graphs = []
-#     for column in df.drop(['Death due to suicide', 'Year'], axis=1):
-#         graphs.append(dcc.Graph(id=f"{label}_scatter_death_rates_with_{column.replace(' ', '_')}",
-#                                 figure=px.scatter(df,
-#                                                   x="Death due to suicide",
-#                                                   y=column,
-#                                                   trendline="ols",
-#                                                   title=f"Scatter between Death due to suicide and {column}")))
-#     return graphs
 
 
 @app.callback(
@@ -143,6 +127,7 @@ def DisplayDistanceGraph(country):
     return px.bar(data_frame=df_distance,
                   barmode='group',
                   labels={'value': 'Distance'})
+
 
 @app.callback(
     Output(component_id='total_attribute_boxplot', component_property='figure'),
@@ -253,15 +238,66 @@ def DisplaySuicideMap(year):
                                "Year": current_year,
                                "Suicide Rate": suicide_rates})
 
-
     fig = px.choropleth(df_suicide,
                         locations="iso_alpha",
                         color="Suicide Rate",
                         hover_name="Country",
-                        color_continuous_scale=px.colors.sequential.Plasma)
+                        color_continuous_scale="Turbo")
     fig.update_geos(fitbounds="locations", visible=True)
-    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+    fig.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
     return fig
+
+
+@app.callback(
+    Output(component_id='parallel_coordinates', component_property='figure'),
+    Input(component_id='slct_country', component_property='value')
+)
+def DisplayParallelCoordinates(country):
+    fig = px.parallel_coordinates(dff[country].drop("Year", axis=1),
+                                  color="Death due to suicide",
+                                  color_continuous_scale="Turbo")
+    return fig
+
+
+@app.callback(
+    Output(component_id='pca_scatter_matrix', component_property='figure'),
+    Input(component_id='slct_country', component_property='value'),
+    Input(component_id='pca_components_slider', component_property='value')
+)
+def DisplayPcaScatterMatrix(country, slider_value):
+    pca = PCA()
+    components = pca.fit_transform(dff[country][dff[country].keys()[1:]])
+    labels = {
+        str(i): f"PC {i + 1} ({var:.1f}%)"
+        for i, var in enumerate(pca.explained_variance_ratio_ * 100)
+    }
+    labels['color'] = 'Death due to suicide'
+
+    fig = px.scatter_matrix(
+        components,
+        labels=labels,
+        dimensions=range(slider_value),
+        color=dff[country]["Death due to suicide"]
+    )
+    fig.update_traces(diagonal_visible=False)
+    return fig
+
+
+@app.callback(
+    Output(component_id='pca_scatter_3D', component_property='figure'),
+    Input(component_id='slct_country', component_property='value'),
+)
+def DisplayPcaScatter3D(country):
+    pca = PCA(n_components=3)
+    components = pca.fit_transform(dff[country][dff[country].keys()[1:]])
+    total_var = pca.explained_variance_ratio_.sum() * 100
+    fig = px.scatter_3d(
+        components, x=0, y=1, z=2, color=dff[country]['Death due to suicide'],
+        title=f'Total Explained Variance: {total_var:.2f}%',
+        labels={'0': 'PC 1', '1': 'PC 2', '2': 'PC 3', 'color': 'Death due to suicide'}
+    )
+    return fig
+
 
 # ------------------------------------------------------------------------------
 # App layout
@@ -319,17 +355,31 @@ app.layout = html.Div([
     html.Br(),
     html.H2(id="country_label", style={'text-align': 'center'}),
     html.Br(),
+
     html.Div(id='stats_table', children=[]),
     html.Br(),
-    html.Div(id='country_table', children=[]),
 
+    html.Div(id='country_table', children=[]),
+    dcc.Graph(id='parallel_coordinates'),
     html.Br(),
+
     html.H3("Calculated distance between Death due to suicide and all other attributes, by using 3 different methods",
             style={'text-align': 'center'}),
     html.Br(),
     html.Div(id='distance_table', children=[]),
     html.Br(),
     dcc.Graph(id='distance_table_graph'),
+    html.Br(),
+    html.Div([
+        html.P("Number of components:"),
+        dcc.Slider(
+            id='pca_components_slider',
+            min=2, max=6, value=3,
+            marks={i: str(i) for i in range(2, 7)}),
+        dcc.Graph(id='pca_scatter_matrix'),
+    ]),
+    html.Br(),
+    dcc.Graph(id='pca_scatter_3D'),
 ])
 
 # ------------------------------------------------------------------------------
