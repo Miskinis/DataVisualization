@@ -1,4 +1,5 @@
 import dash_table
+import numpy as np
 import pandas as pd
 import plotly.express as px  # (version 4.7.0)
 
@@ -8,7 +9,6 @@ import dash_html_components as html
 from dash.dependencies import Input, Output
 from scipy import spatial
 from sklearn import preprocessing
-from RadViz.main import RadViz2D
 from sklearn.decomposition import PCA
 
 app = dash.Dash('Data Visualization')
@@ -266,7 +266,8 @@ def DisplayParallelCoordinates(country):
 )
 def DisplayPcaScatterMatrix(country, slider_value):
     pca = PCA()
-    components = pca.fit_transform(dff[country][dff[country].keys()[1:]])
+    features = dff[country].keys()[1:][1:]
+    components = pca.fit_transform(dff[country][features])
     labels = {
         str(i): f"PC {i + 1} ({var:.1f}%)"
         for i, var in enumerate(pca.explained_variance_ratio_ * 100)
@@ -289,7 +290,8 @@ def DisplayPcaScatterMatrix(country, slider_value):
 )
 def DisplayPcaScatter3D(country):
     pca = PCA(n_components=3)
-    components = pca.fit_transform(dff[country][dff[country].keys()[1:]])
+    features = dff[country].keys()[1:][1:]
+    components = pca.fit_transform(dff[country][features])
     total_var = pca.explained_variance_ratio_.sum() * 100
     fig = px.scatter_3d(
         components, x=0, y=1, z=2, color=dff[country]['Death due to suicide'],
@@ -298,6 +300,56 @@ def DisplayPcaScatter3D(country):
     )
     return fig
 
+
+@app.callback(
+    Output(component_id='pca_area', component_property='figure'),
+    Input(component_id='slct_country', component_property='value'),
+)
+def DisplayVarianceArea(country):
+    features = dff[country].keys()[1:][1:]
+    df = dff[country][features]
+    pca = PCA()
+    pca.fit(df)
+    exp_var_cumul = np.cumsum(pca.explained_variance_ratio_)
+
+    return px.area(
+        x=range(1, exp_var_cumul.shape[0] + 1),
+        y=exp_var_cumul,
+        labels={"x": "# Components", "y": "Explained Variance"}
+    )
+
+@app.callback(
+    Output(component_id='pca_variance_loadings', component_property='figure'),
+    Input(component_id='slct_country', component_property='value'),
+)
+def DisplayVarianceLoadings(country):
+    df = dff[country]
+    features = dff[country].keys()[1:][1:]
+    X = df[features]
+
+    pca = PCA()
+    components = pca.fit_transform(X)
+
+    loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
+
+    fig = px.scatter(components, x=0, y=1, color=df['Death due to suicide'], labels={'color': 'Death due to suicide'})
+
+    for i, feature in enumerate(features.values):
+        fig.add_shape(
+            type='line',
+            x0=0, y0=0,
+            x1=loadings[i, 0],
+            y1=loadings[i, 1]
+        )
+        fig.add_annotation(
+            x=loadings[i, 0],
+            y=loadings[i, 1],
+            ax=0, ay=0,
+            xanchor="center",
+            yanchor="bottom",
+            text=feature,
+        )
+    return fig
 
 # ------------------------------------------------------------------------------
 # App layout
@@ -370,16 +422,24 @@ app.layout = html.Div([
     html.Br(),
     dcc.Graph(id='distance_table_graph'),
     html.Br(),
+    html.H3("Subsets of Principal Components", style={'text-align': 'center'}),
     html.Div([
         html.P("Number of components:"),
         dcc.Slider(
             id='pca_components_slider',
-            min=2, max=6, value=3,
-            marks={i: str(i) for i in range(2, 7)}),
+            min=2, max=5, value=3,
+            marks={i: str(i) for i in range(2, 6)}),
         dcc.Graph(id='pca_scatter_matrix'),
     ]),
     html.Br(),
+    html.H3("Variance Loadings", style={'text-align': 'center'}),
+    dcc.Graph(id='pca_variance_loadings'),
+    html.Br(),
+    html.H3("Subset of 3 Principal Components", style={'text-align': 'center'}),
     dcc.Graph(id='pca_scatter_3D'),
+    html.Br(),
+    html.H3("Variance based on component count", style={'text-align': 'center'}),
+    dcc.Graph(id='pca_area'),
 ])
 
 # ------------------------------------------------------------------------------
