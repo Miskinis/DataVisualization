@@ -1,11 +1,10 @@
+import dash  # (version 1.12.0) pip install dash
+import dash_core_components as dcc
+import dash_html_components as html
 import dash_table
 import numpy as np
 import pandas as pd
 import plotly.express as px  # (version 4.7.0)
-
-import dash  # (version 1.12.0) pip install dash
-import dash_core_components as dcc
-import dash_html_components as html
 from dash.dependencies import Input, Output
 from scipy import spatial
 from sklearn import preprocessing
@@ -265,9 +264,13 @@ def DisplayParallelCoordinates(country):
     Input(component_id='pca_components_slider', component_property='value')
 )
 def DisplayPcaScatterMatrix(country, slider_value):
+    df = dff[country]
+    features = df.keys()[1:][1:]
+    min_max_scaler = preprocessing.MinMaxScaler()
+    x_scaled = min_max_scaler.fit_transform(df.values)
+    df = pd.DataFrame(columns=df.keys(), data=x_scaled)
     pca = PCA()
-    features = dff[country].keys()[1:][1:]
-    components = pca.fit_transform(dff[country][features])
+    components = pca.fit_transform(df[features])
     labels = {
         str(i): f"PC {i + 1} ({var:.1f}%)"
         for i, var in enumerate(pca.explained_variance_ratio_ * 100)
@@ -284,21 +287,25 @@ def DisplayPcaScatterMatrix(country, slider_value):
     return fig
 
 
-@app.callback(
-    Output(component_id='pca_scatter_3D', component_property='figure'),
-    Input(component_id='slct_country', component_property='value'),
-)
-def DisplayPcaScatter3D(country):
-    pca = PCA(n_components=3)
-    features = dff[country].keys()[1:][1:]
-    components = pca.fit_transform(dff[country][features])
-    total_var = pca.explained_variance_ratio_.sum() * 100
-    fig = px.scatter_3d(
-        components, x=0, y=1, z=2, color=dff[country]['Death due to suicide'],
-        title=f'Total Explained Variance: {total_var:.2f}%',
-        labels={'0': 'PC 1', '1': 'PC 2', '2': 'PC 3', 'color': 'Death due to suicide'}
-    )
-    return fig
+# @app.callback(
+#     Output(component_id='pca_scatter_3D', component_property='figure'),
+#     Input(component_id='slct_country', component_property='value'),
+# )
+# def DisplayPcaScatter3D(country):
+#     pca = PCA(n_components=3)
+#     df = dff[country]
+#     features = df.keys()[1:][1:]
+#     min_max_scaler = preprocessing.MinMaxScaler()
+#     x_scaled = min_max_scaler.fit_transform(df.values)
+#     df = pd.DataFrame(columns=df.keys(), data=x_scaled)
+#     components = pca.fit_transform(df[features])
+#     total_var = pca.explained_variance_ratio_.sum() * 100
+#     fig = px.scatter_3d(
+#         components, x=0, y=1, z=2, color=dff[country]['Death due to suicide'],
+#         title=f'Total Explained Variance: {total_var:.2f}%',
+#         labels={'0': 'PC 1', '1': 'PC 2', '2': 'PC 3', 'color': 'Death due to suicide'}
+#     )
+#     return fig
 
 
 @app.callback(
@@ -308,6 +315,9 @@ def DisplayPcaScatter3D(country):
 def DisplayVarianceArea(country):
     features = dff[country].keys()[1:][1:]
     df = dff[country][features]
+    min_max_scaler = preprocessing.MinMaxScaler()
+    x_scaled = min_max_scaler.fit_transform(df.values)
+    df = pd.DataFrame(columns=df.keys(), data=x_scaled)
     pca = PCA()
     pca.fit(df)
     exp_var_cumul = np.cumsum(pca.explained_variance_ratio_)
@@ -318,17 +328,20 @@ def DisplayVarianceArea(country):
         labels={"x": "# Components", "y": "Explained Variance"}
     )
 
+
 @app.callback(
     Output(component_id='pca_variance_loadings', component_property='figure'),
     Input(component_id='slct_country', component_property='value'),
 )
 def DisplayVarianceLoadings(country):
     df = dff[country]
-    features = dff[country].keys()[1:][1:]
-    X = df[features]
+    features = df.keys()[1:][1:]
 
+    min_max_scaler = preprocessing.MinMaxScaler()
+    x_scaled = min_max_scaler.fit_transform(df.values)
+    df = pd.DataFrame(columns=df.keys(), data=x_scaled)
     pca = PCA()
-    components = pca.fit_transform(X)
+    components = pca.fit_transform(df[features])
 
     loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
 
@@ -350,6 +363,57 @@ def DisplayVarianceLoadings(country):
             text=feature,
         )
     return fig
+
+
+@app.callback(
+    Output(component_id='pca_best_loadings', component_property='figure'),
+    Input(component_id='slct_country', component_property='value'),
+)
+def DisplayBestLoadings(country):
+    df = dff[country]
+    features = df.keys()[1:][1:]
+    min_max_scaler = preprocessing.MinMaxScaler()
+    x_scaled = min_max_scaler.fit_transform(df.values)
+    df = pd.DataFrame(columns=df.keys(), data=x_scaled)
+    pca = PCA()
+    pca.fit_transform(df[features])
+    loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
+
+    df_loadings = pd.Series(dtype=float)
+    for i, feature in enumerate(features.values):
+        df_loadings[feature] = spatial.distance.euclidean([0, 0], [loadings[i, 0], loadings[i, 1]])
+    df_loadings = df_loadings.sort_values()
+
+    fig = px.scatter_3d(df, x=df_loadings.keys()[1], y=df_loadings.keys()[2], z=df_loadings.keys()[3],
+                        color='Death due to suicide')
+
+    return fig
+
+
+@app.callback(
+    Output(component_id='pca_worst_loadings', component_property='figure'),
+    Input(component_id='slct_country', component_property='value'),
+)
+def DisplayWorstLoadings(country):
+    df = dff[country]
+    features = df.keys()[1:][1:]
+    min_max_scaler = preprocessing.MinMaxScaler()
+    x_scaled = min_max_scaler.fit_transform(df.values)
+    df = pd.DataFrame(columns=df.keys(), data=x_scaled)
+    pca = PCA()
+    pca.fit_transform(df[features])
+    loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
+
+    df_loadings = pd.Series(dtype=float)
+    for i, feature in enumerate(features.values):
+        df_loadings[feature] = spatial.distance.euclidean([0, 0], [loadings[i, 0], loadings[i, 1]])
+    df_loadings = df_loadings.sort_values()
+
+    fig = px.scatter_3d(df, x=df_loadings.keys()[-1], y=df_loadings.keys()[-2], z=df_loadings.keys()[-3],
+                        color='Death due to suicide')
+
+    return fig
+
 
 # ------------------------------------------------------------------------------
 # App layout
@@ -435,9 +499,15 @@ app.layout = html.Div([
     html.H3("Variance Loadings", style={'text-align': 'center'}),
     dcc.Graph(id='pca_variance_loadings'),
     html.Br(),
-    html.H3("Subset of 3 Principal Components", style={'text-align': 'center'}),
-    dcc.Graph(id='pca_scatter_3D'),
+    html.H3("Subset of 3 Most Informative Principal Components", style={'text-align': 'center'}),
+    dcc.Graph(id='pca_best_loadings'),
     html.Br(),
+    html.H3("Subset of 3 Least Informative Principal Components", style={'text-align': 'center'}),
+    dcc.Graph(id='pca_worst_loadings'),
+    html.Br(),
+    # html.H3("Subset of 3 Principal Components", style={'text-align': 'center'}),
+    # dcc.Graph(id='pca_scatter_3D'),
+    # html.Br(),
     html.H3("Variance based on component count", style={'text-align': 'center'}),
     dcc.Graph(id='pca_area'),
 ])
